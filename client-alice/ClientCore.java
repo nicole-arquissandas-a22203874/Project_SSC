@@ -23,13 +23,51 @@ public class ClientCore {
 
 
         static final int BLOCK_SIZE = 4096;
-
+        //static classes
         static final class Keys {
             byte[] dataKey;
             byte[] kwKey;
             byte[] macKey;
 
         }
+    public static final class FileKeys {
+        public final byte[] dataKey;
+        public final byte[] kwKey;
+
+        FileKeys(byte[] dataKey, byte[] kwKey) {
+            this.dataKey = dataKey;
+            this.kwKey = kwKey;
+        }
+    }
+
+        //
+        // KDF: HMAC-SHA256(masterKey, fileId)
+        private static byte[] deriveKey(byte[] master, String fileId) {
+            try {
+                Mac mac = Mac.getInstance("HmacSHA256");
+                mac.init(new SecretKeySpec(master, "HmacSHA256"));
+                return mac.doFinal(fileId.getBytes());
+            } catch (Exception e) {
+                throw new RuntimeException("Error deriving per-file key", e);
+            }
+        }
+
+    // derive keys for a given fileId from global keys que usei no projeto 1
+    private static FileKeys deriveFileKeys(String fileId) {
+        byte[] dataKey = deriveKey(KEYS.dataKey, fileId);
+        byte[] kwKey   = KEYS.kwKey;
+        return new FileKeys(dataKey, kwKey);
+    }
+
+    // expose for IamClient / CLTest
+    public FileKeys getFileKeysForFileId(String fileId) {
+        return deriveFileKeys(fileId);
+    }
+
+    public String getFileIdForName(String filename) {
+        return fileIds.get(filename);
+    }
+
         static Keys KEYS;
         //file->blockids
         static Map<String, List<String>> fileIndex = new HashMap<>();
@@ -111,6 +149,15 @@ public class ClientCore {
             String fileId = UUID.randomUUID().toString().replace("-", "");
             fileIds.put(filename, fileId);
             saveFileIds();
+        // Derive per-file keys and build per-file CryptoSuite
+        FileKeys fk = deriveFileKeys(fileId);
+        var cfg = CryptoFactory.Config.load(Paths.get("cryptoconfig.txt"));
+        CryptoSuite suite;
+        if ("AES_CBC_HMAC".equalsIgnoreCase(cfg.alg))
+            suite = CryptoFactory.build(cfg, fk.dataKey, KEYS.macKey);
+        else
+            suite = CryptoFactory.build(cfg, fk.dataKey);
+
             try (InputStream fis = Files.newInputStream(file.toPath())) {
                 byte[] buf = new byte[BLOCK_SIZE];
                 int n, idx = 0;
@@ -119,7 +166,7 @@ public class ClientCore {
 
                     byte[] aad = (fileId + ":" + idx).getBytes(); //idx e o block number
                     String blockId = fileId + "_block_" + idx;
-                    byte[] blob = SUITE.encrypt(plaintext, aad); // suite returns iv||ct||tag por exemplo para aes gcm(or suite-specific)
+                    byte[] blob = suite.encrypt(plaintext, aad); // suite returns iv||ct||tag por exemplo para aes gcm(or suite-specific)
                     out.writeUTF("STORE_BLOCK");
                     out.writeUTF(blockId);
                     out.writeInt(blob.length);
@@ -185,6 +232,13 @@ public class ClientCore {
             if (blocks == null) die("not in local index: " + filename);
             Path dir = Paths.get(outDir); Files.createDirectories(dir);
             Path outFile = dir.resolve(filename);
+           FileKeys fk = deriveFileKeys(fileid);
+           var cfg = CryptoFactory.Config.load(Paths.get("cryptoconfig.txt"));
+           CryptoSuite suite;
+           if ("AES_CBC_HMAC".equalsIgnoreCase(cfg.alg))
+               suite = CryptoFactory.build(cfg, fk.dataKey, KEYS.macKey);
+           else
+               suite = CryptoFactory.build(cfg, fk.dataKey);
 
             try (OutputStream fos = Files.newOutputStream(outFile, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING)) {
                 int i = 0;
@@ -196,7 +250,7 @@ public class ClientCore {
                     if (len == -1) die("missing block on server: " + blockId);
                     byte[] blob = in.readNBytes(len); //blob e o bloco encriptado
                     byte[] aad = (fileid + ":" + i).getBytes();
-                    byte[] plain = SUITE.decrypt(blob, aad);
+                    byte[] plain = suite.decrypt(blob, aad);
                     fos.write(plain);
                     System.out.print(".");
                     i++;
@@ -204,6 +258,7 @@ public class ClientCore {
             }
             System.out.println("\nGET: reconstructed to " + outFile.toAbsolutePath());
         }
+
 
         private static void getByKeywords_impl(String keywords, String outDir, DataOutputStream out, DataInputStream in) throws Exception {
             String tok = token(KEYS.kwKey, keywords);
@@ -232,7 +287,15 @@ public class ClientCore {
             String fileid=fileIds.get(filename);
             if (blocks == null) die("not in local index: " + filename);
 
-            // 1) verify every block via GCM tag
+           FileKeys fk = deriveFileKeys(fileid);
+           var cfg = CryptoFactory.Config.load(Paths.get("cryptoconfig.txt"));
+           CryptoSuite suite;
+           if ("AES_CBC_HMAC".equalsIgnoreCase(cfg.alg))
+               suite = CryptoFactory.build(cfg, fk.dataKey, KEYS.macKey);
+           else
+               suite = CryptoFactory.build(cfg, fk.dataKey);
+
+           // verify every block via  tag
             for (int i=0;i<blocks.size();i++) {
                 String blockId = blocks.get(i);
                 out.writeUTF("GET_BLOCK");
@@ -244,16 +307,16 @@ public class ClientCore {
                 byte[] aad = (fileid + ":" + i).getBytes();
 
                 try {
-                    SUITE.decrypt(blob, aad);
+                    suite.decrypt(blob, aad);
                 }
                 catch (Exception ex) {
                     die("Integrity FAIL on block " + i);
                 }
             }
-           System.out.println("Blocks OK (" + SUITE.getClass().getSimpleName().replace("Suite", "") + ").");
+           System.out.println("Blocks OK (" + suite.getClass().getSimpleName().replace("Suite", "") + ").");
 
 
-           // 2) verify keyword linkage still returns this file
+           //  verify keyword linkage still returns this file
             List<String> kws = fileKeywords.getOrDefault(filename, List.of());
             for (String kw : kws) {
                 String tok = token(KEYS.kwKey, kw);
@@ -272,6 +335,78 @@ public class ClientCore {
             System.out.println("Keywords OK (" + kws.size() + ").");
             System.out.println("CHECKINTEGRITY: PASS for " + filename);
         }
+    // Download a shared file using a fileId and a dataKey obtained from OAMS
+    public void getSharedFile(String fileId, String outPath, byte[] dataKey) throws Exception {
+        var cfg = CryptoFactory.Config.load(Paths.get("cryptoconfig.txt"));
+        CryptoSuite suite;
+        if ("AES_CBC_HMAC".equalsIgnoreCase(cfg.alg))
+            suite = CryptoFactory.build(cfg, dataKey, KEYS.macKey);
+        else
+            suite = CryptoFactory.build(cfg, dataKey);
+
+        try (Socket sock = new Socket(host, port);
+             DataInputStream in = new DataInputStream(sock.getInputStream());
+             DataOutputStream out = new DataOutputStream(sock.getOutputStream());
+             OutputStream fos = Files.newOutputStream(Paths.get(outPath))) {
+
+            // 1) List all blocks on OBSS and filter by fileId prefix
+            out.writeUTF("LIST_BLOCKS");
+            out.flush();
+
+            int n = in.readInt();
+            String prefix = fileId + "_block_";
+            java.util.List<String> blockIds = new java.util.ArrayList<>();
+            for (int i = 0; i < n; i++) {
+                String bid = in.readUTF();
+                if (bid.startsWith(prefix)) {
+                    blockIds.add(bid);
+                }
+            }
+
+            // sort by block index
+            blockIds.sort(java.util.Comparator.comparingInt(b ->
+                    Integer.parseInt(b.substring(prefix.length()))));
+
+            // 2) Get each block and decrypt
+            for (int i = 0; i < blockIds.size(); i++) {
+                String bid = blockIds.get(i);
+                out.writeUTF("GET_BLOCK");
+                out.writeUTF(bid);
+                out.flush();
+
+                int len = in.readInt();
+                if (len < 0) throw new IOException("server error on block " + bid);
+                byte[] blob = in.readNBytes(len);
+                byte[] aad = (fileId + ":" + i).getBytes();
+                byte[] plain = suite.decrypt(blob, aad);
+                fos.write(plain);
+            }
+        }
+    }
+    public boolean searchSharedInFile(String keyword, String fileId, byte[] kwKey) throws Exception {
+        try (Socket sock = new Socket(host, port);
+             DataInputStream in = new DataInputStream(sock.getInputStream());
+             DataOutputStream out = new DataOutputStream(sock.getOutputStream())) {
+
+            // build token using the kwKey provided by OAMS
+            String tok = token(kwKey, keyword);
+
+            out.writeUTF("SEARCH");
+            out.writeUTF(tok);
+            out.flush();
+
+            int count = in.readInt();
+            boolean found = false;
+            for (int i = 0; i < count; i++) {
+                String fid = in.readUTF();  // OBSS returns fileId
+                if (fid.equals(fileId)) {
+                    found = true;
+                }
+            }
+
+            return found;
+        }
+    }
 
         // ====== funcoes para ajudar ======
 
@@ -389,6 +524,9 @@ public class ClientCore {
                 return Base64.getEncoder().encodeToString(mac.doFinal(kw.trim().toLowerCase().getBytes()));
             } catch (Exception e) { throw new RuntimeException(e); }
         }
-    }
+
+
+
+}
 
 

@@ -1,14 +1,20 @@
 # Steps:
 
-1-Go to the root and compile the java files from client and server folders
+1-Go to the each client's folder and compile the java files 
 `Example command in Windows:`
-" javac -Xlint:unchecked server\*.java client\crypto\*.java client\*.java"
+"javac -Xlint:unchecked crypto\*.java iam\crypto\*.java *.java CLTest.java IamClient.java ClientCore.java"
 
-2- go to the server path and run it
+2-Go to the server's folder and compile the java files
+`Example command in Windows:`
+" javac -Xlint:unchecked iam\crypto\*.java iam\servers\*.java BlockStorageServer.java"
+
+3- go to the server path and run each server in the specified order
 `Example command in Windows:`
 "java BlockStorageServer"
+"java iam.servers.OAServer"
+"java iam.servers.OAMServer"
 
-3-go to the client path and test
+4-go to the client's path and test
 `Example commands:`
 - java CLTest PUT .\clientfiles\find.txt "keyword1 keyword2" or java CLTest PUT .\clientfiles\find.txt "keyword1,keyword2"
 - java CLTest SEARCH keyword1
@@ -17,6 +23,16 @@
 - java CLTest GET find.txt retrieve
 - java CLTest GET CHECKINTEGRITY clientfiles\find.txt
 - java CLTest LIST
+- CLTest REG <password>
+- CLTest REGMOD <oldPassword> <newPassword>
+- CLTest REGDEL <password>
+- CLTest LOGIN <password>
+- CLTest SHOWPUB 
+- CLTest SHARE <filename> <authorizedPubKeyB64> <GET|SEARCH|GET+SEARCH>
+- CLTest SHAREDEL <filename> <authorizedPubKeyB64>
+- CLTest GETSHARED <fileId> <path/dir/file>
+- CLTest SEARCHSHARED <keywords>
+- CLTest LISTSHARED
 
 # Configuration File: cryptoconfig.txt*
 
