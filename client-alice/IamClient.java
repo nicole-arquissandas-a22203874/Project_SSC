@@ -139,7 +139,7 @@ public class IamClient {
              DataInputStream in = new DataInputStream(s.getInputStream());
              DataOutputStream out = new DataOutputStream(s.getOutputStream())) {
 
-            String cmd = "REGMOD";
+            String cmd = "MODIFY_REG";
             String toSign = cmd + "|" + authToken + "|" + userPubKeyB64 + "|" + pwRecordNew + "|" + attributesHash;
             String sigB64 = signString(toSign);
 
@@ -167,7 +167,7 @@ public class IamClient {
              DataInputStream in = new DataInputStream(s.getInputStream());
              DataOutputStream out = new DataOutputStream(s.getOutputStream())) {
 
-            String cmd = "REGDEL";
+            String cmd = "DELETE_REG";
             String toSign = cmd + "|" + authToken + "|" + userPubKeyB64;
             String sigB64 = signString(toSign);
 

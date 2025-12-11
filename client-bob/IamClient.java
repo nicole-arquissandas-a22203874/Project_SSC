@@ -13,6 +13,7 @@ import java.util.Base64;
 
 public class IamClient {
 
+
     private final String authHost = "localhost"; // OAS
     private final int authPort    = 6000;
     private final String oamsHost = "localhost"; // OAMS
@@ -138,7 +139,7 @@ public class IamClient {
              DataInputStream in = new DataInputStream(s.getInputStream());
              DataOutputStream out = new DataOutputStream(s.getOutputStream())) {
 
-            String cmd = "REGMOD";
+            String cmd = "MODIFY_REG";
             String toSign = cmd + "|" + authToken + "|" + userPubKeyB64 + "|" + pwRecordNew + "|" + attributesHash;
             String sigB64 = signString(toSign);
 
@@ -166,7 +167,7 @@ public class IamClient {
              DataInputStream in = new DataInputStream(s.getInputStream());
              DataOutputStream out = new DataOutputStream(s.getOutputStream())) {
 
-            String cmd = "REGDEL";
+            String cmd = "DELETE_REG";
             String toSign = cmd + "|" + authToken + "|" + userPubKeyB64;
             String sigB64 = signString(toSign);
 
