@@ -132,7 +132,7 @@ public class IamClient {
 
         // derivar nova pass record
         PasswordUtil.PasswordRecord prNew = PasswordUtil.deriveFromPassword(newPassword.toCharArray());
-        String pwRecordNew = PasswordUtil.encodeRecord(prNew);
+        String pwRecordNew   = PasswordUtil.encodeRecord(prNew);
         String attributesHash = "0";
 
         try (Socket s = new Socket(authHost, authPort);
@@ -140,11 +140,12 @@ public class IamClient {
              DataOutputStream out = new DataOutputStream(s.getOutputStream())) {
 
             String cmd = "MODIFY_REG";
-            String toSign = cmd + "|" + authToken + "|" + userPubKeyB64 + "|" + pwRecordNew + "|" + attributesHash;
+
+            String toSign = cmd + "|" + userPubKeyB64 + "|" + pwRecordNew + "|" + attributesHash;
             String sigB64 = signString(toSign);
 
             out.writeUTF(cmd);
-            out.writeUTF(authToken);
+
             out.writeUTF(userPubKeyB64);
             out.writeUTF(pwRecordNew);
             out.writeUTF(attributesHash);
@@ -157,6 +158,7 @@ public class IamClient {
             return "OK".equals(status);
         }
     }
+
     public boolean deleteRegistration(String password) throws Exception {
         if (authToken == null) {
             System.out.println("You must LOGIN first");
@@ -168,11 +170,11 @@ public class IamClient {
              DataOutputStream out = new DataOutputStream(s.getOutputStream())) {
 
             String cmd = "DELETE_REG";
-            String toSign = cmd + "|" + authToken + "|" + userPubKeyB64;
+            String toSign = cmd + "|" + userPubKeyB64;
             String sigB64 = signString(toSign);
 
             out.writeUTF(cmd);
-            out.writeUTF(authToken);
+
             out.writeUTF(userPubKeyB64);
             out.writeUTF(sigB64);
             out.flush();
@@ -181,7 +183,6 @@ public class IamClient {
             String msg    = in.readUTF();
             System.out.println("REGDEL: " + status + " - " + msg);
             if ("OK".equals(status)) {
-
                 authToken = null;
                 try {
                     Files.deleteIfExists(TOKEN_FILE);
@@ -193,6 +194,7 @@ public class IamClient {
             return false;
         }
     }
+
 
     //  Authenticate (AUTH_STEP1 + AUTH_STEP2)
     public boolean login(String password) throws Exception {
